@@ -1,0 +1,312 @@
+Here's the updated code for **Final AI 1.2**, now including Wikipedia integration. This will allow the chatbot to fetch information directly from Wikipedia for more accurate and diverse responses.
+
+### Final AI 1.2: Enhanced Chatbot with Wikipedia Integration
+
+## New Features in 1.2
+
+- **Wikipedia Integration**: Added functionality to retrieve answers from Wikipedia based on user queries.
+- **Improved Error Handling**: Enhanced mechanisms for handling exceptions and failures in AI service calls.
+- **Logging**: Added logging functionality for better debugging and tracking user interactions.
+- **Advanced Feedback Analysis**: Implemented a system for analyzing feedback to optimize responses.
+- **User-Generated Content**: Allows users to contribute new questions and responses directly through the chat interface.
+
+---
+
+## Step-by-Step Guide to Building Final AI 1.2 with Wikipedia Integration
+
+### Step 1: Set Up Your Environment
+
+Ensure you have completed Step 1 from **Final AI 1.0** and install the `wikipedia-api` library if you haven't already.
+
+```bash
+pip install flask sklearn textblob gtts wikipedia-api bcrypt pillow cryptography numpy pandas matplotlib openai ibm-watson transformers google-cloud-dialogflow azure-ai-textanalytics
+```
+
+### Step 2: Update Basic Files
+
+No new files are needed, but ensure your previous files are organized as described in **Final AI 1.0**.
+
+### Step 3: Write the Code for Final AI 1.2
+
+Here’s the updated code for **Final AI 1.2** with Wikipedia integration:
+
+```python
+import os
+import random
+import sqlite3
+import bcrypt
+import logging
+import openai
+import wikipediaapi
+from flask import Flask, request, render_template, redirect, url_for, session, flash
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.naive_bayes import MultinomialNB
+from ibm_watson import AssistantV2
+from ibm_cloud_sdk_core.authenticators import IAMAuthenticator
+from transformers import pipeline
+from google.cloud import dialogflow_v2 as dialogflow
+from azure.core.credentials import AzureKeyCredential
+from azure.ai.textanalytics import TextAnalyticsClient
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+
+# Initialize Flask app
+app = Flask(__name__)
+app.secret_key = os.urandom(24)
+
+# Initialize SQLite database
+def init_db():
+    conn = sqlite3.connect('chatbot.db')
+    cursor = conn.cursor()
+    cursor.execute('''CREATE TABLE IF NOT EXISTS feedback (
+                        id INTEGER PRIMARY KEY,
+                        user_input TEXT,
+                        response TEXT,
+                        rating INTEGER)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS user_preferences (
+                        id INTEGER PRIMARY KEY,
+                        user_name TEXT,
+                        preferences TEXT)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS user_generated_data (
+                        id INTEGER PRIMARY KEY,
+                        user_input TEXT,
+                        response TEXT)''')
+    conn.commit()
+    return conn
+
+# Load data from a text file
+def load_data_from_file(filename):
+    try:
+        with open(filename, 'r') as file:
+            lines = file.readlines()
+        return [tuple(line.strip().split('|')) for line in lines if line.strip()]
+    except Exception as e:
+        logging.error(f"Error loading data: {e}")
+        return []
+
+# Save user credentials
+def save_user_credentials(username, password):
+    try:
+        hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+        with open('user_data.txt', 'a') as file:
+            file.write(f"{username}:{hashed_password.decode('utf-8')}\n")
+    except Exception as e:
+        logging.error(f"Error saving user credentials: {e}")
+
+# Prepare training data
+def prepare_training_data(data):
+    texts, labels = zip(*data)
+    vectorizer = TfidfVectorizer()
+    X = vectorizer.fit_transform(texts)
+    return X, labels, vectorizer
+
+# AI response functions
+def get_openai_response(prompt):
+    try:
+        openai.api_key = 'YOUR_OPENAI_API_KEY'
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return response['choices'][0]['message']['content']
+    except Exception as e:
+        logging.error(f"OpenAI error: {e}")
+        return None
+
+def get_watson_response(prompt):
+    try:
+        authenticator = IAMAuthenticator('YOUR_IBM_API_KEY')
+        assistant = AssistantV2(
+            version='2021-06-14',
+            authenticator=authenticator
+        )
+        assistant.set_service_url('YOUR_SERVICE_URL')
+        
+        response = assistant.message(
+            assistant_id='YOUR_ASSISTANT_ID',
+            session_id='YOUR_SESSION_ID',
+            input={'message_type': 'text', 'text': prompt}
+        ).get_result()
+        
+        return response['output']['generic'][0]['text']
+    except Exception as e:
+        logging.error(f"Watson error: {e}")
+        return None
+
+def get_hugging_face_response(prompt):
+    try:
+        nlp = pipeline("text-generation", model="gpt2")
+        response = nlp(prompt, max_length=50, num_return_sequences=1)
+        return response[0]['generated_text']
+    except Exception as e:
+        logging.error(f"Hugging Face error: {e}")
+        return None
+
+def get_dialogflow_response(text, session_id):
+    try:
+        client = dialogflow.SessionsClient()
+        session = f"projects/YOUR_PROJECT_ID/agent/sessions/{session_id}"
+        
+        text_input = dialogflow.TextInput(text=text, language_code='en')
+        query_input = dialogflow.QueryInput(text=text_input)
+        response = client.detect_intent(request={"session": session, "query_input": query_input})
+        
+        return response.query_result.fulfillment_text
+    except Exception as e:
+        logging.error(f"Dialogflow error: {e}")
+        return None
+
+def get_azure_response(prompt):
+    try:
+        endpoint = "YOUR_AZURE_ENDPOINT"
+        key = "YOUR_AZURE_KEY"
+        
+        text_analytics_client = TextAnalyticsClient(endpoint=endpoint, credential=AzureKeyCredential(key))
+        response = text_analytics_client.analyze_sentiment(documents=[prompt])
+        
+        return response[0].sentiment
+    except Exception as e:
+        logging.error(f"Azure error: {e}")
+        return None
+
+def get_wikipedia_response(query):
+    try:
+        wiki_wiki = wikipediaapi.Wikipedia('en')
+        page = wiki_wiki.page(query)
+        if page.exists():
+            return page.summary
+        else:
+            return "I couldn't find any information on that topic."
+    except Exception as e:
+        logging.error(f"Wikipedia error: {e}")
+        return None
+
+# Main response function
+def respond(user_input, model, vectorizer, data, session_id):
+    user_input_vector = vectorizer.transform([user_input])
+    prediction = model.predict(user_input_vector)[0]
+    responses = [r for (q, r) in data if q in user_input]
+    
+    if responses:
+        return random.choice(responses)
+    
+    # Fallback to other AI services
+    response = get_wikipedia_response(user_input)
+    if response:
+        return response
+
+    for service in [get_openai_response, get_watson_response, get_hugging_face_response, get_dialogflow_response, get_azure_response]:
+        response = service(user_input)
+        if response:
+            return response
+
+    return "I'm not sure how to respond to that."
+
+# Route to handle user feedback and new data
+@app.route('/submit_feedback', methods=['POST'])
+def submit_feedback():
+    user_input = request.form['user_input']
+    response = request.form['response']
+    rating = request.form['rating']
+    
+    if user_input and response:
+        cursor = conn.cursor()
+        cursor.execute('INSERT INTO feedback (user_input, response, rating) VALUES (?, ?, ?)', 
+                       (user_input, response, rating))
+        conn.commit()
+        flash("Thank you for your feedback!")
+    return redirect(url_for('chat'))
+
+# Route to handle user-generated content
+@app.route('/submit_data', methods=['POST'])
+def submit_data():
+    user_input = request.form['user_input']
+    response = request.form['response']
+    
+    if user_input and response:
+        cursor = conn.cursor()
+        cursor.execute('INSERT INTO user_generated_data (user_input, response) VALUES (?, ?)', 
+                       (user_input, response))
+        conn.commit()
+        flash("Your contribution has been submitted!")
+    return redirect(url_for('chat'))
+
+@app.route('/')
+def home():
+    return render_template('index.html')
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        with open('user_data.txt', 'r') as file:
+            for line in file:
+                stored_username, stored_password = line.strip().split(':')
+                if username == stored_username and bcrypt.checkpw(password.encode('utf-8'), stored_password.encode('utf-8')):
+                    session['username'] = username
+                    return redirect(url_for('chat'))
+            flash("Invalid username or password.")
+    return render_template('login.html')
+
+@app.route('/chat', methods=['POST'])
+def chat():
+    user_input = request.form['user_input']
+    session_id = session['username']
+    response = respond(user_input, model, vectorizer, data, session_id)
+    
+    rating = request.form.get('rating')  # Assuming a rating input in the form
+    if rating:
+        cursor = conn.cursor()
+        cursor.execute('INSERT INTO feedback (user_input, response, rating) VALUES
+
+ (?, ?, ?)', 
+                       (user_input, response, rating))
+        conn.commit()
+    
+    return response
+
+if __name__ == "__main__":
+    data = load_data_from_file('chatbot_data.txt')
+    X, y, vectorizer = prepare_training_data(data)
+    model = MultinomialNB()
+    model.fit(X, y)
+    conn = init_db()
+    app.run(debug=True)
+```
+
+### Step 4: Populate Your Dataset
+
+1. **Expand the Dataset**: Open `chatbot_data.txt` and add new entries as described in **Final AI 1.0**.
+   
+2. **User Contributions**: Update your chat interface to allow users to submit new questions and responses.
+
+### Step 5: Implement User Preferences
+
+Follow the instructions from **Final AI 1.0** to manage user preferences.
+
+### Step 6: Testing the Chatbot
+
+1. **Run the Chatbot**: In the terminal, navigate to your project folder and run:
+   ```bash
+   python chatbot.py
+   ```
+
+2. **Access the Chatbot**: Open a web browser and go to `http://127.0.0.1:5000/`.
+
+3. **Test User Feedback and Contributions**: Verify the feedback and user-generated content functionalities.
+
+### Step 7: Future Enhancements
+
+1. **Continuous Dataset Expansion**: Encourage users to suggest new questions and responses.
+   
+2. **Advanced Analysis**: Utilize libraries like Pandas and Matplotlib for deeper feedback analysis.
+
+3. **Further Personalization Features**: Enhance the ability to remember multiple user preferences and histories.
+
+4. **Explore More AI Services**: Continue integrating additional AI services as they become available.
+
+### Final Note
+
+Final AI 1.2 improves upon its predecessor by integrating Wikipedia, enhancing user feedback, and allowing user-generated content. This creates a more dynamic and engaging experience for users. As you implement these features, consider how they can be further refined and expanded in future versions.

@@ -1,0 +1,103 @@
+Sure! Here’s a simple guide to help you set up the **Final AI 2.01** update on your computer. Just follow these steps, and you’ll be up and running in no time!
+
+### Step 1: Get Python Installed
+
+1. **Install Python**:
+   - Go to [python.org](https://www.python.org/downloads/) and download the latest version of Python.
+   - During the installation, make sure to check the box that says “Add Python to PATH.” This makes it easier to run Python commands later.
+
+### Step 2: Download the Final AI 2.01 Code
+
+2. **Download the Code**:
+   - You can either clone it from a GitHub repository or download it as a ZIP file.
+   - If you’re using Git, open your terminal (Command Prompt or PowerShell on Windows, Terminal on macOS/Linux) and run:
+     ```bash
+     git clone <repository-url>
+     ```
+   - If you downloaded it as a ZIP, unzip the file to a folder on your computer.
+
+### Step 3: Set Up a Virtual Environment
+
+3. **Create a Virtual Environment**:
+   - Open your terminal and navigate to the folder where you downloaded the code. You can do this using the `cd` command:
+     ```bash
+     cd path\to\your\folder
+     ```
+   - Now, create a virtual environment (this helps keep your project’s libraries separate):
+     ```bash
+     python -m venv venv
+     ```
+   - Activate the virtual environment:
+     - On Windows:
+       ```bash
+       venv\Scripts\activate
+       ```
+     - On macOS/Linux:
+       ```bash
+       source venv/bin/activate
+       ```
+
+### Step 4: Install Required Libraries
+
+4. **Install Libraries**:
+   - With the virtual environment activated, you need to install some libraries that the project uses. Run this command:
+     ```bash
+     pip install flask argon2-cffi cryptography flask-mail flask-jwt-extended flask-caching flask-limiter
+     ```
+
+### Step 5: Set Up Environment Variables
+
+5. **Set Up Email Credentials**:
+   - You need to provide your email credentials for the app to send emails. Create a new file named `.env` in your project folder and add the following lines (replace the placeholders with your actual email and password):
+     ```
+     EMAIL_USER=your_email@example.com
+     EMAIL_PASS=your_email_password
+     ```
+
+### Step 6: Initialize the Database
+
+6. **Initialize the Database**:
+   - Open the Python shell by typing `python` in your terminal.
+   - Run the following code to set up the database:
+     ```python
+     import sqlite3
+     conn = sqlite3.connect('chatbot.db')
+     cursor = conn.cursor()
+     cursor.execute('''CREATE TABLE IF NOT EXISTS users (
+                         id INTEGER PRIMARY KEY,
+                         username TEXT UNIQUE,
+                         password TEXT,
+                         email TEXT UNIQUE,
+                         reset_token TEXT,
+                         role TEXT DEFAULT 'user',
+                         data_sharing BOOLEAN DEFAULT 1,
+                         privacy_setting TEXT DEFAULT 'standard',
+                         encryption_key TEXT)''')
+     # Add other tables as necessary...
+     conn.commit()
+     conn.close()
+     ```
+
+### Step 7: Run the Application
+
+7. **Run the Application**:
+   - Exit the Python shell and go back to your terminal. Make sure your virtual environment is still activated.
+   - Run the app with the following command:
+     ```bash
+     python app.py
+     ```
+   - If everything is set up correctly, the app should start running. You’ll see a message that says something like "Running on http://127.0.0.1:5000".
+
+### Step 8: Access the Application
+
+8. **Open the App in Your Browser**:
+   - Open your web browser and type in `http://127.0.0.1:5000`.
+   - You should see the app’s homepage!
+
+### Final Tips
+
+- If you encounter any errors, read the messages carefully—they often tell you what went wrong.
+- Make sure you keep your virtual environment activated whenever you want to run or work on the app.
+- If you want to stop the app, go back to your terminal and press `Ctrl + C`.
+
+And that’s it! You’ve successfully set up the **Final AI 2.01** update on your computer. If you have any questions or need help, feel free to ask!

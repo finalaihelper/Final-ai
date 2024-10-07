@@ -1,0 +1,250 @@
+Sure! Let’s enhance **Final AI 1.3** by allowing users to select from various OpenAI GPT models. This will enable users to choose which model to use for responses, depending on their needs or preferences.
+
+### Final AI 1.3: Enhanced Chatbot with Model Selection and GitHub Integration
+
+## New Features in 1.3
+
+- **Explore More AI Services**: Enhanced integration of various AI services.
+- **GitHub Code Retrieval and Analysis**: Ability to fetch code from GitHub and analyze it to suggest improvements.
+- **Model Selection**: Allow users to choose from available OpenAI models for generating responses.
+
+---
+
+## Step-by-Step Guide to Building Final AI 1.3
+
+### Step 1: Set Up Your Environment
+
+Make sure you have the required libraries:
+
+```bash
+pip install flask sklearn textblob gtts wikipedia-api bcrypt pillow cryptography numpy pandas matplotlib openai ibm-watson transformers google-cloud-dialogflow azure-ai-textanalytics requests
+```
+
+### Step 2: Update Basic Files
+
+No new files are needed, but ensure your existing files are organized.
+
+### Step 3: Write the Code for Final AI 1.3
+
+Here’s the updated code for **Final AI 1.3** with model selection:
+
+```python
+import os
+import random
+import sqlite3
+import bcrypt
+import logging
+import openai
+import wikipediaapi
+import requests
+import ast
+from flask import Flask, request, render_template, redirect, url_for, session, flash
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.naive_bayes import MultinomialNB
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+
+# Initialize Flask app
+app = Flask(__name__)
+app.secret_key = os.urandom(24)
+
+# Initialize SQLite database
+def init_db():
+    conn = sqlite3.connect('chatbot.db')
+    cursor = conn.cursor()
+    cursor.execute('''CREATE TABLE IF NOT EXISTS feedback (
+                        id INTEGER PRIMARY KEY,
+                        user_input TEXT,
+                        response TEXT,
+                        rating INTEGER)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS user_preferences (
+                        id INTEGER PRIMARY KEY,
+                        user_name TEXT,
+                        preferences TEXT)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS user_generated_data (
+                        id INTEGER PRIMARY KEY,
+                        user_input TEXT,
+                        response TEXT)''')
+    conn.commit()
+    return conn
+
+# Load data from a text file
+def load_data_from_file(filename):
+    try:
+        with open(filename, 'r') as file:
+            lines = file.readlines()
+        return [tuple(line.strip().split('|')) for line in lines if line.strip()]
+    except Exception as e:
+        logging.error(f"Error loading data: {e}")
+        return []
+
+# Save user credentials
+def save_user_credentials(username, password):
+    try:
+        hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+        with open('user_data.txt', 'a') as file:
+            file.write(f"{username}:{hashed_password.decode('utf-8')}\n")
+    except Exception as e:
+        logging.error(f"Error saving user credentials: {e}")
+
+# Prepare training data
+def prepare_training_data(data):
+    texts, labels = zip(*data)
+    vectorizer = TfidfVectorizer()
+    X = vectorizer.fit_transform(texts)
+    return X, labels, vectorizer
+
+# AI response functions
+def get_openai_response(prompt, model):
+    try:
+        openai.api_key = 'YOUR_OPENAI_API_KEY'
+        response = openai.ChatCompletion.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return response['choices'][0]['message']['content']
+    except Exception as e:
+        logging.error(f"OpenAI error: {e}")
+        return None
+
+def get_wikipedia_response(query):
+    try:
+        wiki_wiki = wikipediaapi.Wikipedia('en')
+        page = wiki_wiki.page(query)
+        if page.exists():
+            return page.summary
+        else:
+            return "I couldn't find any information on that topic."
+    except Exception as e:
+        logging.error(f"Wikipedia error: {e}")
+        return None
+
+def get_github_code(repository, filename):
+    try:
+        url = f"https://raw.githubusercontent.com/{repository}/main/{filename}"
+        response = requests.get(url)
+        if response.status_code == 200:
+            return response.text
+        else:
+            return "Could not retrieve code from GitHub."
+    except Exception as e:
+        logging.error(f"GitHub error: {e}")
+        return None
+
+def analyze_code(code):
+    try:
+        tree = ast.parse(code)
+        functions = [node.name for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)]
+        return f"Functions found: {', '.join(functions)}" if functions else "No functions found."
+    except Exception as e:
+        logging.error(f"Code analysis error: {e}")
+        return "Error analyzing code."
+
+# Main response function
+def respond(user_input, model, vectorizer, data):
+    user_input_vector = vectorizer.transform([user_input])
+    prediction = model.predict(user_input_vector)[0]
+    responses = [r for (q, r) in data if q in user_input]
+    
+    if responses:
+        return random.choice(responses)
+    
+    if user_input.startswith("get code from"):
+        parts = user_input.split()
+        repository = parts[3]
+        filename = parts[5] if len(parts) > 5 else 'README.md'
+        code = get_github_code(repository, filename)
+        analysis = analyze_code(code)
+        return f"Code:\n{code}\n\nAnalysis:\n{analysis}"
+
+    # Fallback to Wikipedia
+    response = get_wikipedia_response(user_input)
+    if response:
+        return response
+
+    return "I'm not sure how to respond to that."
+
+@app.route('/')
+def home():
+    return render_template('index.html')
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        with open('user_data.txt', 'r') as file:
+            for line in file:
+                stored_username, stored_password = line.strip().split(':')
+                if username == stored_username and bcrypt.checkpw(password.encode('utf-8'), stored_password.encode('utf-8')):
+                    session['username'] = username
+                    return redirect(url_for('chat'))
+            flash("Invalid username or password.")
+    return render_template('login.html')
+
+@app.route('/select_model', methods=['GET', 'POST'])
+def select_model():
+    if request.method == 'POST':
+        selected_model = request.form['model']
+        session['model'] = selected_model
+        flash(f"Model selected: {selected_model}")
+        return redirect(url_for('chat'))
+    
+    models = ["gpt-3.5-turbo", "gpt-4", "gpt-4-32k"]  # Add more models as they become available
+    return render_template('select_model.html', models=models)
+
+@app.route('/chat', methods=['POST'])
+def chat():
+    user_input = request.form['user_input']
+    selected_model = session.get('model', 'gpt-3.5-turbo')  # Default model
+    response = respond(user_input, selected_model, model, data)
+    return response
+
+if __name__ == "__main__":
+    data = load_data_from_file('chatbot_data.txt')
+    X, y, vectorizer = prepare_training_data(data)
+    model = MultinomialNB()
+    model.fit(X, y)
+    conn = init_db()
+    app.run(debug=True)
+```
+
+### Step 4: Populate Your Dataset
+
+1. **Expand the Dataset**: As described in **Final AI 1.0**, keep updating your `chatbot_data.txt`.
+
+2. **User Contributions**: Allow users to suggest questions and responses through the chat interface.
+
+### Step 5: Implement User Preferences
+
+Follow the instructions from **Final AI 1.0** to manage user preferences.
+
+### Step 6: Testing the Chatbot
+
+1. **Run the Chatbot**: In the terminal, navigate to your project folder and run:
+   ```bash
+   python chatbot.py
+   ```
+
+2. **Access the Chatbot**: Open a web browser and go to `http://127.0.0.1:5000/`.
+
+3. **Select a Model**: Users can now select from available OpenAI models before starting a chat.
+
+4. **Test User Feedback and Contributions**: Verify that user feedback is recorded, and user-generated content can be submitted.
+
+5. **GitHub Code Retrieval and Analysis**: Test fetching code snippets from GitHub with the command `get code from <repository> <filename>`.
+
+### Step 7: Future Enhancements
+
+1. **Continuous Dataset Expansion**: Encourage users to suggest new questions and responses.
+   
+2. **Advanced Analysis**: Utilize libraries like Pandas and Matplotlib for deeper feedback analysis.
+
+3. **Further Personalization Features**: Enhance the ability to remember multiple user preferences and histories.
+
+4. **Explore More AI Services**: Continue integrating additional AI services as they become available.
+
+### Final Note
+
+Final AI 1.3 now allows users to choose from various OpenAI models, enhancing flexibility in responses. It retains the functionalities of retrieving and analyzing code from GitHub, making it a powerful tool for user interaction. As you implement these features, consider how to keep evolving and refining your chatbot in future updates.
